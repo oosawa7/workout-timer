@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ワークアウト・ストレッチタイマー v6</title>
+<title>ワークアウト・ストレッチタイマー v7</title>
 <style>
 body{font-family:'Helvetica Neue',Arial,sans-serif;background-color:#f4f6f9;color:#333;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:10px;box-sizing:border-box;}
 .container{background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.05);width:100%;max-width:580px;box-sizing:border-box;}
@@ -35,26 +35,11 @@ button{flex:1;padding:12px;border:none;border-radius:6px;font-size:1rem;font-wei
 .btn-stop:hover{background-color:#e53e3e;}
 button:disabled{background-color:#cbd5e0;cursor:not-allowed;}
 
-/* スマホ用レイアウト調整 */
 @media (max-width: 480px) {
-  .setting-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .left-group {
-    width: 100%;
-  }
-  .setting-name-input {
-    max-width: none;
-    flex: 1;
-  }
-  .right-group {
-    width: 100%;
-    justify-content: flex-start;
-    padding-left: 26px;
-    box-sizing: border-box;
-  }
+  .setting-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .left-group { width: 100%; }
+  .setting-name-input { max-width: none; flex: 1; }
+  .right-group { width: 100%; justify-content: flex-start; padding-left: 26px; box-sizing: border-box; }
 }
 </style>
 </head>
@@ -74,16 +59,21 @@ button:disabled{background-color:#cbd5e0;cursor:not-allowed;}
 </div>
 </div>
 
-<!-- 著作権フリーのワークアウト向けオーディオBGMリンク -->
-<audio id="bgmAudio" loop src="https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3" preload="auto"></audio>
+<!-- あなたのGitHubリポジトリ内の bgm.mp3 を直接読み込みます -->
+<audio id="bgmAudio" loop src="bgm.mp3" preload="auto"></audio>
 
 <script>
 const totalSettings=5;const STORAGE_KEY='workout_timer_settings_v5';let currentRowIndex=-1;let remainingCounts=0;let mainLoopTimeout=null;let progressInterval=null;let audioCtx=null;let currentIntervalType='A';let currentTotalTime=0;let currentRemainingTime=0;const updateSpeed=100;let lastCountedSecond=0;const bgm=document.getElementById('bgmAudio');bgm.volume=0.15;const defaultSettings=[{checked:true,name:'設定 1',count:10,intA:3,intB:2},{checked:false,name:'設定 2',count:5,intA:5,intB:5},{checked:false,name:'設定 3',count:8,intA:4,intB:3},{checked:false,name:'設定 4',count:12,intA:2,intB:2},{checked:false,name:'設定 5',count:15,intA:3,intB:1}];let currentSettings=JSON.parse(localStorage.getItem(STORAGE_KEY))||defaultSettings;const container=document.getElementById('settings-container');for(let i=0;i<totalSettings;i++){const item=currentSettings[i]||defaultSettings[i];const row=document.createElement('div');row.className=`setting-row ${item.checked?'active':''}`;row.id=`row-${i}`;row.innerHTML=`<div class="left-group"><input type="checkbox" id="chk-${i}" ${item.checked?'checked':''} onchange="handleCheckboxChange(${i})"><input type="text" id="name-${i}" class="setting-name-input" value="${item.name}" oninput="saveAllSettings()" placeholder="設定名入力"></div><div class="right-group"><div class="input-group"><input type="number" id="count-${i}" value="${item.count}" min="1" oninput="saveAllSettings()"> 回</div><div class="input-group"><input type="number" id="intA-${i}" value="${item.intA}" min="1" oninput="saveAllSettings()"> 秒(A)</div><div class="input-group"><input type="number" id="intB-${i}" value="${item.intB}" min="1" oninput="saveAllSettings()"> 秒(B)</div></div>`;container.appendChild(row);}
 function saveAllSettings(){const settingsToSave=[];for(let i=0;i<totalSettings;i++){settingsToSave.push({checked:document.getElementById(`chk-${i}`).checked,name:document.getElementById(`name-${i}`).value,count:parseInt(document.getElementById(`count-${i}`).value)||1,intA:parseFloat(document.getElementById(`intA-${i}`).value)||1,intB:parseFloat(document.getElementById(`intB-${i}`).value)||1});}localStorage.setItem(STORAGE_KEY,JSON.stringify(settingsToSave));}
 
-/* 電子音システム */
-function playBeep(freq,duration){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();const osc=audioCtx.createOscillator();const gain=audioCtx.createGain();osc.type='sine';osc.frequency.setValueAtTime(freq,audioCtx.currentTime);gain.gain.setValueAtTime(0.1,audioCtx.currentTime);gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+duration);osc.connect(gain);gain.connect(audioCtx.destination);osc.start();osc.stop(audioCtx.currentTime+duration);}
-function playSwitchSound(){playBeep(660,0.15);}
+/* 電子音システム（AとBで音を変更） */
+function playBeep(freq,duration,type="sine"){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();const osc=audioCtx.createOscillator();const gain=audioCtx.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,audioCtx.currentTime);gain.gain.setValueAtTime(0.1,audioCtx.currentTime);gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+duration);osc.connect(gain);gain.connect(audioCtx.destination);osc.start();osc.stop(audioCtx.currentTime+duration);}
+
+// A開始：高めのピピッ（ワーク開始）
+function playASound(){playBeep(660,0.15);}
+// B開始：低めで優しいポーン（休憩開始）
+function playBSound(){playBeep(440,0.3,"triangle");} 
+
 function playCountdownSound(){playBeep(880,0.08);}
 function playFinishAlarm(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();const now=audioCtx.currentTime;for(let i=0;i<4;i++){const startTime=now+(i*0.15);const osc=audioCtx.createOscillator();const gain=audioCtx.createGain();osc.type='sine';osc.frequency.setValueAtTime(1000,startTime);gain.gain.setValueAtTime(0.1,startTime);gain.gain.exponentialRampToValueAtTime(0.001,startTime+0.12);osc.connect(gain);gain.connect(audioCtx.destination);osc.start(startTime);osc.stop(startTime+0.15);}}
 
@@ -91,14 +81,12 @@ function handleCheckboxChange(selectedIndex){for(let i=0;i<totalSettings;i++){if
 function toggleInputs(disabled){for(let i=0;i<totalSettings;i++){document.getElementById(`chk-${i}`).disabled=disabled;document.getElementById(`name-${i}`).disabled=disabled;document.getElementById(`count-${i}`).disabled=disabled;document.getElementById(`intA-${i}`).disabled=disabled;document.getElementById(`intB-${i}`).disabled=disabled;}}
 
 function startTimer(){currentRowIndex=-1;for(let i=0;i<totalSettings;i++){if(document.getElementById(`chk-${i}`).checked){currentRowIndex=i;break;}}if(currentRowIndex===-1){alert('動かしたい設定のチェックボックスにチェックを入れてください。');return;}remainingCounts=parseInt(document.getElementById(`count-${currentRowIndex}`).value);if(isNaN(remainingCounts)||remainingCounts<=0){alert('回数を正しく入力してください。');return;}toggleInputs(true);document.getElementById('startBtn').style.display='none';document.getElementById('pauseBtn').style.display='block';document.getElementById('stopBtn').style.display='block';currentIntervalType='A';
-try{bgm.currentTime=0;bgm.play();}catch(e){console.log("BGM autoplay blocked");}
+try{bgm.currentTime=0;bgm.play();}catch(e){console.log("BGM blocked");}
 setNextInterval();}
 
-function setNextInterval(){if(remainingCounts<=0){finishTimer();return;}const inputA=document.getElementById(`intA-${currentRowIndex}`);const inputB=document.getElementById(`intB-${currentRowIndex}`);let seconds=0;if(currentIntervalType==='A'){seconds=parseFloat(inputA.value);inputA.classList.add('current-interval');inputB.classList.remove('current-interval');}else{seconds=parseFloat(inputB.value);inputB.classList.add('current-interval');inputA.classList.remove('current-interval');}currentTotalTime=seconds*1000;currentRemainingTime=currentTotalTime;lastCountedSecond=Math.ceil(seconds);playSwitchSound();updateDisplay();startProgressLoop();mainLoopTimeout=setTimeout(()=>{stopProgressLoop();if(currentIntervalType==='A'){currentIntervalType='B';}else{currentIntervalType='A';remainingCounts--;}setNextInterval();},currentTotalTime);}
+function setNextInterval(){if(remainingCounts<=0){finishTimer();return;}const inputA=document.getElementById(`intA-${currentRowIndex}`);const inputB=document.getElementById(`intB-${currentRowIndex}`);let seconds=0;if(currentIntervalType==='A'){seconds=parseFloat(inputA.value);inputA.classList.add('current-interval');inputB.classList.remove('current-interval');playASound();}else{seconds=parseFloat(inputB.value);inputB.classList.add('current-interval');inputA.classList.remove('current-interval');playBSound();}currentTotalTime=seconds*1000;currentRemainingTime=currentTotalTime;lastCountedSecond=Math.ceil(seconds);updateDisplay();startProgressLoop();mainLoopTimeout=setTimeout(()=>{stopProgressLoop();if(currentIntervalType==='A'){currentIntervalType='B';}else{currentIntervalType='A';remainingCounts--;}setNextInterval();},currentTotalTime);}
 
-function startProgressLoop(){stopProgressLoop();progressInterval=setInterval(()=>{currentRemainingTime-=updateSpeed;if(currentRemainingTime<0)currentRemainingTime=0;
-const currentSecond=Math.ceil(currentRemainingTime/1000);if(currentSecond>0&&currentSecond<=3&&currentSecond!==lastCountedSecond){playCountdownSound();lastCountedSecond=currentSecond;}
-updateDisplay();},updateSpeed);}
+function startProgressLoop(){stopProgressLoop();progressInterval=setInterval(()=>{currentRemainingTime-=updateSpeed;if(currentRemainingTime<0)currentRemainingTime=0;const currentSecond=Math.ceil(currentRemainingTime/1000);if(currentSecond>0&&currentSecond<=3&&currentSecond!==lastCountedSecond){playCountdownSound();lastCountedSecond=currentSecond;}updateDisplay();},updateSpeed);}
 function stopProgressLoop(){clearInterval(progressInterval);}
 
 function updateDisplay(){const status=document.getElementById('status');const progressBar=document.getElementById('progressBar');const displaySec=(currentRemainingTime/1000).toFixed(1);const currentName=document.getElementById(`name-${currentRowIndex}`).value||`設定 ${currentRowIndex+1}`;status.innerHTML=`<span style="font-size:0.9rem; color:#718096; display:block;">${currentName}を実行中</span>残り: <span style="color:#3182ce; font-size:1.4rem;">${remainingCounts}</span> 回 ── <span style="color:#e53e3e;">間隔${currentIntervalType}</span> (${displaySec}秒)`;const progressPercent=((currentTotalTime-currentRemainingTime)/currentTotalTime)*100;progressBar.style.width=`${progressPercent}%`;}
