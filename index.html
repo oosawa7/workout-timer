@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ワークアウト・ストレッチタイマー v8.0</title>
+<title>ワークアウト・ストレッチタイマー v8.1</title>
 <style>
 body{font-family:'Helvetica Neue',Arial,sans-serif;background-color:#f4f6f9;color:#333;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:10px;box-sizing:border-box;}
 .container{background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.05);width:100%;max-width:640px;box-sizing:border-box;}
@@ -26,7 +26,6 @@ h1{font-size:1.3rem;text-align:center;margin-bottom:15px;color:#2c3e50;}
 .input-group{display:flex;align-items:center;gap:2px;font-size:0.8rem;white-space:nowrap;color:#4a5568;}
 input[type="number"]{width:42px;padding:6px 4px;border:1px solid #cbd5e0;border-radius:4px;text-align:center;font-size:0.9rem;}
 
-/* 新機能用の色付け */
 .advanced-badge{font-size:0.7rem;background:#9f7aea;color:white;padding:2px 5px;border-radius:4px;margin-left:4px;font-weight:normal;}
 .current-active-param{background-color:#feebc8 !important;border-color:#fbd38d !important;font-weight:bold;}
 
@@ -55,8 +54,9 @@ button:disabled{background-color:#cbd5e0;cursor:not-allowed;}
 <h1>Stretch & Workout Timer</h1>
 
 <div class="bgm-control-panel">
-  <input type="checkbox" id="bgmSwitch" checked onchange="toggleBgmPlayState()">
-  <label id="bgmLabel" for="bgmSwitch" style="cursor:pointer; user-select:none;">🎵 BGMを流す（音量：極小）</label>
+  <!-- 初期値でチェックを外す（unchecked） -->
+  <input type="checkbox" id="bgmSwitch" onchange="toggleBgmPlayState()">
+  <label id="bgmLabel" for="bgmSwitch" style="cursor:pointer; user-select:none;">🎵 BGMを流す</label>
 </div>
 
 <div class="status-display">
@@ -85,19 +85,20 @@ let audioCtx=null;
 const updateSpeed=100;
 let lastCountedSecond=0;
 
-// タイマー進行用の詳細ステータス
+// 画面のスリープ（自動消灯）防止用オブジェクト
+let wakeLock = null;
+
 let isAdvancedMode=false;
 let currentSet=1, totalSets=1;
 let currentCount=1, totalCounts=1;
 let currentRemainingTime=0, currentTotalTime=0;
-let advancedPhase=''; // 'WORK'（動作秒数） または 'INTERVAL'（セット間休み）
-let simplePhase='A';  // 'A' または 'B'
+let advancedPhase='';
+let simplePhase='A';
 
 const bgm=document.getElementById('bgmAudio');
 const bgmSwitch=document.getElementById('bgmSwitch');
 bgm.volume=0.02; 
 
-// 初期設定（1,2は従来型、3,4は新型セット対応）
 const defaultSettings=[
   {type:'simple',checked:true,name:'設定 1',count:10,intA:3,intB:2},
   {type:'simple',checked:false,name:'設定 2',count:5,intA:5,intB:5},
@@ -108,7 +109,6 @@ const defaultSettings=[
 let currentSettings=JSON.parse(localStorage.getItem(STORAGE_KEY))||defaultSettings;
 const container=document.getElementById('settings-container');
 
-// 画面に4つの設定行を生成
 for(let i=0; i<4; i++){
   const item=currentSettings[i]||defaultSettings[i];
   const row=document.createElement('div');
@@ -116,7 +116,6 @@ for(let i=0; i<4; i++){
   row.id=`row-${i}`;
   
   if(item.type === 'simple'){
-    // 従来型（設定1、2）
     row.innerHTML=`
       <div class="left-group">
         <input type="checkbox" id="chk-${i}" ${item.checked?'checked':''} onchange="handleCheckboxChange(${i})">
@@ -128,7 +127,6 @@ for(let i=0; i<4; i++){
         <div class="input-group"><input type="number" id="intB-${i}" value="${item.intB}" min="1" oninput="saveAllSettings()"> 秒(B)</div>
       </div>`;
   } else {
-    // 改造新型（設定3、4）
     row.innerHTML=`
       <div class="left-group">
         <input type="checkbox" id="chk-${i}" ${item.checked?'checked':''} onchange="handleCheckboxChange(${i})">
@@ -167,7 +165,26 @@ function saveAllSettings(){
   localStorage.setItem(STORAGE_KEY,JSON.stringify(settingsToSave));
 }
 
-/* 音響システム（独立管理・大音量） */
+/* 画面スリープを防止する関数 */
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) {
+      console.log('Wake Lock Error:', err.name, err.message);
+    }
+  }
+}
+
+/* 画面スリープ防止の解除関数 */
+function releaseWakeLock() {
+  if (wakeLock !== null) {
+    wakeLock.release().then(() => {
+      wakeLock = null;
+    });
+  }
+}
+
 function playBeep(freq,duration,type="sine"){
   if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -185,7 +202,7 @@ function playBeep(freq,duration,type="sine"){
 function playASound(){playBeep(660,0.15);}
 function playBSound(){playBeep(440,0.3,"triangle");} 
 function playCountdownSound(){playBeep(880,0.08);}
-function playSetFinishSound(){playBeep(587.33,0.2); setTimeout(()=>playBeep(698.46,0.2),150); setTimeout(()=>playBeep(880,0.4),300);} // ファンファーレ風
+function playSetFinishSound(){playBeep(587.33,0.2); setTimeout(()=>playBeep(698.46,0.2),150); setTimeout(()=>playBeep(880,0.4),300);}
 function playFinishAlarm(){
   if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -245,7 +262,6 @@ function toggleBgmPlayState(){
   }
 }
 
-/* タイマー開始ロジック */
 function startTimer(){
   currentRowIndex=-1;
   for(let i=0; i<4; i++){
@@ -256,6 +272,9 @@ function startTimer(){
   if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state === 'suspended') audioCtx.resume();
 
+  // タイマー開始時に画面スリープ防止をONにする
+  requestWakeLock();
+
   toggleInputs(true);
   document.getElementById('startBtn').style.display='none';
   document.getElementById('pauseBtn').style.display='block';
@@ -263,16 +282,13 @@ function startTimer(){
 
   if(bgmSwitch.checked){try{bgm.currentTime=0;bgm.play();}catch(e){}}
 
-  // モード判定
   if(currentRowIndex < 2) {
-    // 従来モード
     isAdvancedMode = false;
     totalCounts = parseInt(document.getElementById(`count-${currentRowIndex}`).value)||1;
     currentCount = totalCounts; 
     simplePhase = 'A';
     runSimpleNext();
   } else {
-    // 改造セットモード
     isAdvancedMode = true;
     totalSets = parseInt(document.getElementById(`sets-${currentRowIndex}`).value)||1;
     totalCounts = parseInt(document.getElementById(`count-${currentRowIndex}`).value)||1;
@@ -283,7 +299,6 @@ function startTimer(){
   }
 }
 
-/* ＝メインループ：従来型（設定1, 2）＝ */
 function runSimpleNext(){
   if(currentCount<=0){ finishTimer(); return; }
   const inputA=document.getElementById(`intA-${currentRowIndex}`);
@@ -320,9 +335,7 @@ function runSimpleNext(){
   },currentTotalTime);
 }
 
-/* ＝メインループ：改造セット型（設定3, 4）＝ */
 function runAdvancedNext(){
-  // 全セット終了
   if(currentSet > totalSets){ finishTimer(); return; }
   
   const inputSets=document.getElementById(`sets-${currentRowIndex}`);
@@ -330,7 +343,6 @@ function runAdvancedNext(){
   const inputWork=document.getElementById(`workSec-${currentRowIndex}`);
   const inputInt=document.getElementById(`intSec-${currentRowIndex}`);
   
-  // ハイライトのリセット
   inputSets.classList.remove('current-active-param');
   inputCount.classList.remove('current-active-param');
   inputWork.classList.remove('current-active-param');
@@ -339,17 +351,15 @@ function runAdvancedNext(){
   let seconds = 0;
   
   if(advancedPhase === 'WORK') {
-    // 動作中（○秒毎）
     inputCount.classList.add('current-active-param');
     inputWork.classList.add('current-active-param');
     seconds = parseFloat(inputWork.value);
-    playASound(); // 1回ごとの開始音
+    playASound();
   } else {
-    // セット間インターバル
     inputSets.classList.add('current-active-param');
     inputInt.classList.add('current-active-param');
     seconds = parseFloat(inputInt.value);
-    playSetFinishSound(); // セット終了の特別アラーム
+    playSetFinishSound();
   }
   
   currentTotalTime=seconds*1000;
@@ -363,23 +373,18 @@ function runAdvancedNext(){
     
     if(advancedPhase === 'WORK') {
       if(currentCount < totalCounts) {
-        // 同じセット内で次の回数へ
         currentCount++;
         runAdvancedNext();
       } else {
-        // 指定回数に達した
         if(currentSet < totalSets) {
-          // まだ次のセットがある場合はインターバルへ
           advancedPhase = 'INTERVAL';
           runAdvancedNext();
         } else {
-          // 最終セットの最終回が終わったら終了
           currentSet++;
           runAdvancedNext();
         }
       }
     } else {
-      // インターバル終了。次のセットの1回目へ
       currentSet++;
       currentCount = 1;
       advancedPhase = 'WORK';
@@ -388,7 +393,6 @@ function runAdvancedNext(){
   }, currentTotalTime);
 }
 
-/* 進捗バーとカウントダウン音 */
 function startProgressLoop(){
   stopProgressLoop();
   progressInterval=setInterval(()=>{
@@ -404,7 +408,6 @@ function startProgressLoop(){
 }
 function stopProgressLoop(){clearInterval(progressInterval);}
 
-/* 画面表示の更新 */
 function updateDisplay(){
   const status=document.getElementById('status');
   const progressBar=document.getElementById('progressBar');
@@ -412,10 +415,8 @@ function updateDisplay(){
   const currentName=document.getElementById(`name-${currentRowIndex}`).value||`設定 ${currentRowIndex+1}`;
   
   if(!isAdvancedMode) {
-    // 従来表示
     status.innerHTML=`<span style="font-size:0.9rem; color:#718096; display:block;">${currentName}を実行中</span>残り: <span style="color:#3182ce; font-size:1.4rem;">${currentCount}</span> 回 ── <span style="color:#e53e3e;">間隔${simplePhase}</span> (${displaySec}秒)`;
   } else {
-    // 改造セット表示
     if(advancedPhase === 'WORK') {
       status.innerHTML=`<span style="font-size:0.9rem; color:#6b46c1; display:block; font-weight:bold;">${currentName} (セット進行中)</span><span style="color:#3182ce; font-size:1.3rem;">${currentSet}</span>/${totalSets} ｾｯﾄ目 ── <span style="color:#3182ce; font-size:1.3rem;">${currentCount}</span>/${totalCounts} 回目 (${displaySec}秒)`;
     } else {
@@ -426,17 +427,19 @@ function updateDisplay(){
   progressBar.style.width=`${progressPercent}%`;
 }
 
-/* 一時停止・再開・ストップ */
 function pauseTimer(){
   clearTimeout(mainLoopTimeout);
   stopProgressLoop();
   bgm.pause();
+  releaseWakeLock(); // 一時停止中はスリープ防止解除
   document.getElementById('pauseBtn').style.display='none';
   document.getElementById('resumeBtn').style.display='block';
   const currentName=document.getElementById(`name-${currentRowIndex}`).value||`設定 ${currentRowIndex+1}`;
   document.getElementById('status').innerHTML=`<span style="font-size:0.9rem; color:#718096; display:block;">${currentName}</span>⏸ 一時停止中`;
 }
+
 function resumeTimer(){
+  requestWakeLock(); // 再開時にスリープ防止再有効化
   document.getElementById('resumeBtn').style.display='none';
   document.getElementById('pauseBtn').style.display='block';
   if(bgmSwitch.checked){bgm.play();}
@@ -460,11 +463,23 @@ function resumeTimer(){
   },currentRemainingTime);
 }
 
-function finishTimer(){cleanup();playFinishAlarm();document.getElementById('status').innerHTML='✨ 全メニュー終了！素晴らしいです！ ✨';resetButtons();}
-function stopTimer(){cleanup();document.getElementById('status').innerHTML='設定を選んでスタートしてください';resetButtons();}
+function finishTimer(){
+  cleanup();
+  playFinishAlarm();
+  document.getElementById('status').innerHTML='✨ 全メニュー終了！素晴らしいです！ ✨';
+  resetButtons();
+}
+
+function stopTimer(){
+  cleanup();
+  document.getElementById('status').innerHTML='設定を選んでスタートしてください';
+  resetButtons();
+}
+
 function cleanup(){
   clearTimeout(mainLoopTimeout);
   stopProgressLoop();
+  releaseWakeLock(); // 終了時にスリープ防止を解除
   bgm.pause();
   bgm.currentTime=0;
   document.getElementById('progressBar').style.width='0%';
@@ -480,7 +495,14 @@ function cleanup(){
     }
   }
 }
-function resetButtons(){toggleInputs(false);document.getElementById('startBtn').style.display='block';document.getElementById('pauseBtn').style.display='none';document.getElementById('resumeBtn').style.display='none';document.getElementById('stopBtn').style.display='none';}
+
+function resetButtons(){
+  toggleInputs(false);
+  document.getElementById('startBtn').style.display='block';
+  document.getElementById('pauseBtn').style.display='none';
+  document.getElementById('resumeBtn').style.display='none';
+  document.getElementById('stopBtn').style.display='none';
+}
 </script>
 </body>
 </html>
